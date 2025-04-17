@@ -1,6 +1,6 @@
 # SteamレビューをCSVでダウンロードする君
 
-## 使い方
+## install
 ```shell
 # 仮想環境を作成 (例: .venv)
 python -m venv .venv
@@ -17,3 +17,8 @@ pip install -r requirements.txt
 # 実行
 streamlit run app.py
 ```
+
+## usage
+1. SteamのAppIDを入力
+2. データを取得
+3. CSVファイルをダウンロード
