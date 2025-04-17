@@ -24,14 +24,21 @@ def get_all_reviews(appid: int):
     }
 
     st.write("レビュー取得中...") # 進捗表示
-    progress_bar = st.progress(0)
+    progress_container = st.container()
+    progress_text = progress_container.empty()
+    progress_bar = progress_container.progress(0)
     page_count = 0
     total_reviews_estimated = None # 推定総レビュー数
+    max_pages_estimated = None # 推定最大ページ数
     previous_cursors = set()  # 過去に使用したカーソルを記録
 
     while True:
         page_count += 1
-        st.write(f"{page_count}ページ目を取得中... (cursor: {cursor[:10]}...)") # ページ取得状況
+        # プログレステキストを更新
+        if max_pages_estimated:
+            progress_text.text(f"ページ取得状況: {page_count}/{max_pages_estimated} (cursor: {cursor[:10]}...)")
+        else:
+            progress_text.text(f"ページ取得状況: {page_count}/? (cursor: {cursor[:10]}...)")
         
         # カーソル値をそのまま設定（requests.getが自動的にエンコードする）
         params["cursor"] = cursor
@@ -56,52 +63,64 @@ def get_all_reviews(appid: int):
 
             # 初回リクエストで推定総レビュー数を取得
             if total_reviews_estimated is None and "query_summary" in data:
-                 # query_summary が存在し、かつ total_reviews が数値の場合のみ取得
+                # query_summary が存在し、かつ total_reviews が数値の場合のみ取得
                 if isinstance(data["query_summary"].get("total_reviews"), (int, float)):
                     total_reviews_estimated = data["query_summary"]["total_reviews"]
-                    st.write(f"推定総レビュー数: {total_reviews_estimated}")
+                    # 推定最大ページ数を計算（1ページあたり最大100件）
+                    num_per_page_int = int(params.get("num_per_page", 100))
+                    max_pages_estimated = (total_reviews_estimated + num_per_page_int - 1) // num_per_page_int
+                    st.write(f"推定総レビュー数: {total_reviews_estimated} (約{max_pages_estimated}ページ)")
+                    # プログレステキストを更新
+                    progress_text.text(f"ページ取得状況: {page_count}/{max_pages_estimated} (cursor: {cursor[:10]}...)")
 
 
             current_reviews = data.get("reviews", [])
             reviews.extend(current_reviews)
 
-            # 進捗バーの更新 (推定総数がある場合)
-            if total_reviews_estimated and total_reviews_estimated > 0:
-                progress = min(len(reviews) / total_reviews_estimated, 1.0)
+            # 進捗バーの更新 (推定最大ページ数がある場合)
+            if max_pages_estimated and max_pages_estimated > 0:
+                progress = min(page_count / max_pages_estimated, 1.0)
                 progress_bar.progress(progress)
+                # プログレステキストも更新
+                progress_text.text(f"ページ取得状況: {page_count}/{max_pages_estimated} (cursor: {cursor[:10]}...)")
             else:
-                # 推定総数がない場合は、取得ページ数で簡易的に進捗を表示
-                 progress_bar.progress(min(page_count / 50.0, 1.0)) # 仮に50ページを最大とする
+                # 推定最大ページ数がない場合は、取得ページ数で簡易的に進捗を表示
+                progress_bar.progress(min(page_count / 50.0, 1.0)) # 仮に50ページを最大とする
+                progress_text.text(f"ページ取得状況: {page_count}/? (cursor: {cursor[:10]}...)")
 
             # レビューが空か、取得数がnum_per_page未満なら終了
             # num_per_page は文字列なので比較のためにintに変換
             num_per_page_int = int(params.get("num_per_page", 100))
             if not current_reviews or len(current_reviews) < num_per_page_int:
-                 st.write("全レビューを取得しました。")
-                 progress_bar.progress(1.0) # 完了時に100%にする
-                 break
+                progress_text.text(f"ページ取得完了: {page_count}ページ取得しました")
+                progress_bar.progress(1.0) # 完了時に100%にする
+                st.write("全レビューを取得しました。")
+                break
 
             # 新しいカーソル値を取得
             cursor = data.get("cursor")
             print(f"APIから返された新しいカーソル値: {cursor}")
             if not cursor:
-                st.warning("次のカーソルが見つかりませんでした。取得を終了します。")
+                progress_text.text(f"ページ取得完了: {page_count}ページ取得しました")
                 progress_bar.progress(1.0) # 完了時に100%にする
+                st.warning("次のカーソルが見つかりませんでした。取得を終了します。")
                 break
                 
             # 同じカーソルが再度出現したら無限ループを防ぐために終了
             if cursor in previous_cursors:
-                st.warning(f"同じカーソル値が再度出現しました。ページネーションを終了します。")
+                progress_text.text(f"ページ取得完了: {page_count}ページ取得しました")
                 progress_bar.progress(1.0) # 完了時に100%にする
+                st.warning(f"同じカーソル値が再度出現しました。ページネーションを終了します。")
                 break
             
             # 使用したカーソルを記録
             previous_cursors.add(cursor)
             
             # 最大ページ数の制限 (安全対策)
-            if page_count >= 100:  # 最大50ページまで
-                st.warning("最大ページ数に達しました。取得を終了します。")
+            if page_count >= 100:  # 最大100ページまで
+                progress_text.text(f"ページ取得完了: 最大制限の{page_count}ページに到達")
                 progress_bar.progress(1.0)
+                st.warning("最大ページ数に達しました。取得を終了します。")
                 break
 
         except requests.exceptions.RequestException as e:
@@ -139,7 +158,7 @@ def convert_reviews_to_csv(reviews):
     return csv_buffer.getvalue()
 
 # --- Streamlit UI ---
-st.title("Steam レビューダウンローダー")
+st.title("Steam レビューをCSVでダンロードする君")
 
 # App IDの入力
 appid_input = st.text_input("Steam App ID を入力してください:", placeholder="例: 688130")
