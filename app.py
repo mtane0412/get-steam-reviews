@@ -158,7 +158,7 @@ def convert_reviews_to_csv(reviews):
     return csv_buffer.getvalue()
 
 # --- Streamlit UI ---
-st.title("Steam レビューをCSVでダンロードする君")
+st.title("SteamレビューをCSVでダンロードする君")
 
 # App IDの入力
 appid_input = st.text_input("Steam App ID を入力してください:", placeholder="例: 688130")
