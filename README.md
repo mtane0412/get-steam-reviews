@@ -19,6 +19,6 @@ streamlit run app.py
 ```
 
 ## usage
-1. SteamのAppIDを入力
+1. Steam上のゲームのAppIDを入力
 2. データを取得
 3. CSVファイルをダウンロード
