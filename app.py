@@ -4,7 +4,7 @@ import pandas as pd
 import io
 
 # Steam APIからレビューを取得する関数 (プレースホルダー)
-def get_all_reviews(appid: int):
+def get_all_reviews(appid: int, language: str = "all", max_pages: int = 100):
     """
     指定されたappidのSteamレビューをすべて取得する関数。
     ページネーションを処理して全レビューを結合する。
@@ -15,13 +15,20 @@ def get_all_reviews(appid: int):
     params = {
         "json": "1",
         "filter": "recent",  # 有用性順で取得 (デフォルト)
-        "language": "all",
         "day_range": "365", # 過去365日間のレビューを対象 (filter=all の場合)
         "num_per_page": "100", # 一度に取得する最大レビュー数
         "review_type": "all",
         "purchase_type": "all",
         # cursorはループ内で設定するので、ここでは設定しない
     }
+    
+    # 言語パラメータの処理
+    # 'all'以外の言語が指定された場合のみ言語パラメータを追加
+    if language != "all":
+        params["language"] = language
+    
+    # デバッグ用：パラメータを表示
+    print(f"APIパラメータ: {params}")
 
     st.write("レビュー取得中...") # 進捗表示
     progress_container = st.container()
@@ -40,11 +47,12 @@ def get_all_reviews(appid: int):
         else:
             progress_text.text(f"ページ取得状況: {page_count}/? (cursor: {cursor[:10]}...)")
         
-        # カーソル値をそのまま設定（requests.getが自動的にエンコードする）
+        # カーソル値を設定
         params["cursor"] = cursor
         
-        # デバッグ用：カーソル値を表示
+        # デバッグ用：カーソル値とパラメータを表示
         print(f"設定するカーソル値: {cursor}")
+        print(f"リクエストパラメータ: {params}")
 
         try:
             # リクエスト実行
@@ -100,6 +108,16 @@ def get_all_reviews(appid: int):
             # 新しいカーソル値を取得
             cursor = data.get("cursor")
             print(f"APIから返された新しいカーソル値: {cursor}")
+            
+            # APIレスポンスの構造を詳細に確認（デバッグ用）
+            if "cursor" in data:
+                print(f"カーソル値の型: {type(data['cursor'])}")
+            else:
+                print("APIレスポンスにカーソルが含まれていません")
+                
+            if "reviews" in data:
+                print(f"取得したレビュー数: {len(data['reviews'])}")
+            
             if not cursor:
                 progress_text.text(f"ページ取得完了: {page_count}ページ取得しました")
                 progress_bar.progress(1.0) # 完了時に100%にする
@@ -117,7 +135,7 @@ def get_all_reviews(appid: int):
             previous_cursors.add(cursor)
             
             # 最大ページ数の制限 (安全対策)
-            if page_count >= 100:  # 最大100ページまで
+            if page_count >= max_pages:  # 指定された最大ページ数まで
                 progress_text.text(f"ページ取得完了: 最大制限の{page_count}ページに到達")
                 progress_bar.progress(1.0)
                 st.warning("最大ページ数に達しました。取得を終了します。")
@@ -160,8 +178,61 @@ def convert_reviews_to_csv(reviews):
 # --- Streamlit UI ---
 st.title("SteamレビューをCSVでダンロードする君")
 
+# 言語選択用のデータ
+language_options = [
+    {"display": "すべての言語", "value": "all"},
+    {"display": "アラビア語", "value": "arabic"},
+    {"display": "ブルガリア語", "value": "bulgarian"},
+    {"display": "中国語（簡体字）", "value": "schinese"},
+    {"display": "中国語（繁体字）", "value": "tchinese"},
+    {"display": "チェコ語", "value": "czech"},
+    {"display": "デンマーク語", "value": "danish"},
+    {"display": "オランダ語", "value": "dutch"},
+    {"display": "英語", "value": "english"},
+    {"display": "フィンランド語", "value": "finnish"},
+    {"display": "フランス語", "value": "french"},
+    {"display": "ドイツ語", "value": "german"},
+    {"display": "ギリシャ語", "value": "greek"},
+    {"display": "ハンガリー語", "value": "hungarian"},
+    {"display": "インドネシア語", "value": "indonesian"},
+    {"display": "イタリア語", "value": "italian"},
+    {"display": "日本語", "value": "japanese"},
+    {"display": "韓国語", "value": "koreana"},
+    {"display": "ノルウェー語", "value": "norwegian"},
+    {"display": "ポーランド語", "value": "polish"},
+    {"display": "ポルトガル語", "value": "portuguese"},
+    {"display": "ポルトガル語－ブラジル", "value": "brazilian"},
+    {"display": "ルーマニア語", "value": "romanian"},
+    {"display": "ロシア語", "value": "russian"},
+    {"display": "スペイン語－スペイン", "value": "spanish"},
+    {"display": "スペイン語－ラテンアメリカ", "value": "latam"},
+    {"display": "スウェーデン語", "value": "swedish"},
+    {"display": "タイ語", "value": "thai"},
+    {"display": "トルコ語", "value": "turkish"},
+    {"display": "ウクライナ語", "value": "ukrainian"},
+    {"display": "ベトナム語", "value": "vietnamese"}
+]
+
 # App IDの入力
 appid_input = st.text_input("Steam App ID を入力してください:", placeholder="例: 688130")
+
+# 言語選択ドロップダウン
+selected_language = st.selectbox(
+    "レビュー言語を選択してください:",
+    options=[lang["value"] for lang in language_options],
+    format_func=lambda x: next((lang["display"] for lang in language_options if lang["value"] == x), x),
+    index=0  # デフォルトは「すべての言語」
+)
+
+# 最大ページ数の設定
+max_pages = st.slider(
+    "最大取得ページ数を設定してください:",
+    min_value=1,
+    max_value=500,
+    value=100,
+    step=10,
+    help="1ページあたり最大100件のレビューを取得します。多すぎると時間がかかります。"
+)
 
 if appid_input:
     try:
@@ -171,28 +242,36 @@ if appid_input:
         # レビュー取得ボタン (レビュー取得処理をボタンクリック時に実行)
         if st.button("レビュー取得 & CSVダウンロード準備"):
             # セッションステートにレビューデータを保存
-            st.session_state.reviews = get_all_reviews(appid)
+            st.session_state.reviews = get_all_reviews(appid, selected_language, max_pages)
             st.session_state.appid_processed = appid # 処理したappidも保存
+            st.session_state.language_processed = selected_language # 処理した言語も保存
+            st.session_state.max_pages_processed = max_pages # 処理した最大ページ数も保存
 
     except ValueError:
         st.error("有効な数字の App ID を入力してください。")
     except Exception as e:
         st.error(f"エラーが発生しました: {e}")
 
-# レビューデータが取得済みで、かつ現在のappidと一致する場合にダウンロードボタンを表示
-if 'reviews' in st.session_state and st.session_state.reviews is not None and 'appid_processed' in st.session_state and st.session_state.appid_processed == int(appid_input):
+# レビューデータが取得済みで、かつ現在のappidと言語と最大ページ数が一致する場合にダウンロードボタンを表示
+if ('reviews' in st.session_state and st.session_state.reviews is not None and
+    'appid_processed' in st.session_state and st.session_state.appid_processed == int(appid_input) and
+    'language_processed' in st.session_state and st.session_state.language_processed == selected_language and
+    'max_pages_processed' in st.session_state and st.session_state.max_pages_processed == max_pages):
     st.write("レビューデータの準備ができました。")
     csv_data = convert_reviews_to_csv(st.session_state.reviews)
     if csv_data:
         st.download_button(
             label="CSVファイルをダウンロード",
             data=csv_data,
-            file_name=f"steam_reviews_{st.session_state.appid_processed}.csv",
+            file_name=f"steam_reviews_{st.session_state.appid_processed}_{st.session_state.language_processed}_max{st.session_state.max_pages_processed}.csv",
             mime="text/csv",
         )
     else:
         st.warning("ダウンロードするレビューデータがありません。")
-elif 'reviews' in st.session_state and st.session_state.reviews is None and 'appid_processed' in st.session_state and st.session_state.appid_processed == int(appid_input):
+elif ('reviews' in st.session_state and st.session_state.reviews is None and
+      'appid_processed' in st.session_state and st.session_state.appid_processed == int(appid_input) and
+      'language_processed' in st.session_state and st.session_state.language_processed == selected_language and
+      'max_pages_processed' in st.session_state and st.session_state.max_pages_processed == max_pages):
      st.warning("レビューの取得に失敗したか、レビューが存在しませんでした。")
 
 # セッションステートの初期化（デバッグ用、必要に応じて）
